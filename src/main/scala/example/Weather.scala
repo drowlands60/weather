@@ -40,9 +40,9 @@ object Weather extends IOApp.Simple {
   def printWeather(weatherJson: String, city: Json): IO[Unit] =
     parser.parse(weatherJson) match {
       case Right(json: Json) =>
-        var weather_string: String = ""
+        var weatherString: String = ""
         city.hcursor.get[String]("EnglishName") match {
-          case Right(value) => weather_string = weather_string + s"$value:\n"
+          case Right(value) => weatherString = weatherString + s"$value:\n"
           case _            => IO.unit
         }
         val temp_val: Either[io.circe.DecodingFailure, Double] =
@@ -56,20 +56,20 @@ object Weather extends IOApp.Simple {
           json.hcursor.downArray.get[Boolean]("IsDayTime")
         temp_val match {
           case Right(value) =>
-            weather_string = weather_string + s"Temperature: $value"
+            weatherString = weatherString + s"Temperature: $value"
           case _ => IO.unit
         }
         weather match {
           case Right(value) =>
-            weather_string = weather_string + s"\nWeather: $value"
+            weatherString = weatherString + s"\nWeather: $value"
           case _ => IO.unit
         }
         daytime match {
-          case Right(true)  => weather_string = weather_string + s"\nDaytime"
-          case Right(false) => weather_string = weather_string + s"\nNight time"
+          case Right(true)  => weatherString = weatherString + s"\nDaytime"
+          case Right(false) => weatherString = weatherString + s"\nNight time"
           case _            => IO.unit
         }
-        IO.println(weather_string)
+        IO.println(weatherString)
 
       case Left(error) => IO.println(s"Failed to parse JSON: $error")
     }
