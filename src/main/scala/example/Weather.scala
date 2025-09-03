@@ -9,8 +9,10 @@ object Weather extends IOApp.Simple {
 
   def run: IO[Unit] =
     EmberClientBuilder.default[IO].build.use { client =>
-      def go: IO[Unit] = 
-        weatherFunc(client) >> getInput("Do you want to check another city? (y/n): ").flatMap( repeat => if (repeat.toLowerCase == "y") go else IO.unit )
+      def go: IO[Unit] =
+        weatherFunc(client) >> getInput(
+          "Do you want to check another city? (y/n): "
+        ).flatMap(repeat => if (repeat.toLowerCase == "y") go else IO.unit)
       go
     }
 
@@ -43,7 +45,7 @@ object Weather extends IOApp.Simple {
         var weatherString: String = ""
         city.hcursor.get[String]("EnglishName") match {
           case Right(value) => weatherString = weatherString + s"$value:\n"
-          case _            => IO.unit
+          case _            => null
         }
         val temp_val: Either[io.circe.DecodingFailure, Double] =
           json.hcursor.downArray
@@ -82,30 +84,39 @@ object Weather extends IOApp.Simple {
       body <- client.expect[String](uri)
       _ <- parser.parse(body) match {
         case Right(response: Json) =>
-          val cities: Vector[Json] = response.asArray.getOrElse(Vector.empty)
-          val indexedCities: Vector[(Json, Int)] = cities.zipWithIndex
-
-          for {
-            _ <- printCities(indexedCities)
-
-            input <- getInput(
-              "Enter the number for the city you wish to receive the weather report for: "
+          val cities: Either[Throwable, Vector[Json]] =
+            response.asArray.toRight(
+              new Exception("No cities returned from AccuWeather")
             )
-            cityIndexOpt = input.toIntOption
+          cities match {
+            case Left(err) => IO.raiseError(err)
+            case Right(cities) =>
+              val indexedCities: Vector[(Json, Int)] = cities.zipWithIndex
 
-            _ <- cityIndexOpt match {
-              case Some(index) =>
-                indexedCities.collectFirst {
-                  case (json, i) if i == index => json
-                } match {
-                  case Some(cityJson) =>
-                    getWeather(client, cityJson).flatMap(weatherBody => printWeather(weatherBody, cityJson))
-                  case None => IO.println("No city found at that index.")
+              for {
+                _ <- printCities(indexedCities)
+
+                input <- getInput(
+                  "Enter the number for the city you wish to receive the weather report for: "
+                )
+                cityIndexOpt = input.toIntOption
+
+                _ <- cityIndexOpt match {
+                  case Some(index) =>
+                    indexedCities.collectFirst {
+                      case (json, i) if i == index => json
+                    } match {
+                      case Some(cityJson) =>
+                        getWeather(client, cityJson).flatMap(weatherBody =>
+                          printWeather(weatherBody, cityJson)
+                        )
+                      case None => IO.println("No city found at that index.")
+                    }
+                  case None =>
+                    IO.println("Invalid number entered.")
                 }
-              case None =>
-                IO.println("Invalid number entered.")
-            }
-          } yield ()
+              } yield ()
+          }
         case Left(error) => IO.println(s"Failed to parse JSON: $error")
       }
     } yield ()
