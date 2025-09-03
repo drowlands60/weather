@@ -59,17 +59,17 @@ object Weather extends IOApp.Simple {
         temp_val match {
           case Right(value) =>
             weatherString = weatherString + s"Temperature: $value"
-          case _ => IO.unit
+          case _ => null
         }
         weather match {
           case Right(value) =>
             weatherString = weatherString + s"\nWeather: $value"
-          case _ => IO.unit
+          case _ => null
         }
         daytime match {
           case Right(true)  => weatherString = weatherString + s"\nDaytime"
           case Right(false) => weatherString = weatherString + s"\nNight time"
-          case _            => IO.unit
+          case _            => null
         }
         IO.println(weatherString)
 
