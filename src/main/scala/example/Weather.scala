@@ -40,40 +40,6 @@ object Weather extends IOApp.Simple {
     
   }
 
-  def printWeather(weatherJson: String, city: City): IO[Unit] =
-    parser.parse(weatherJson) match {
-      case Right(json: Json) =>
-        var weatherString: String = ""
-        weatherString + s"${city.EnglishName}:\n"
-        val temp_val: Either[io.circe.DecodingFailure, Double] =
-          json.hcursor.downArray
-            .downField("Temperature")
-            .downField("Metric")
-            .get[Double]("Value")
-        val weather: Either[io.circe.DecodingFailure, String] =
-          json.hcursor.downArray.get[String]("WeatherText")
-        val daytime: Either[io.circe.DecodingFailure, Boolean] =
-          json.hcursor.downArray.get[Boolean]("IsDayTime")
-        temp_val match {
-          case Right(value) =>
-            weatherString = weatherString + s"Temperature: $value"
-          case _ => null
-        }
-        weather match {
-          case Right(value) =>
-            weatherString = weatherString + s"\nWeather: $value"
-          case _ => null
-        }
-        daytime match {
-          case Right(true)  => weatherString = weatherString + s"\nDaytime"
-          case Right(false) => weatherString = weatherString + s"\nNight time"
-          case _            => null
-        }
-        IO.println(weatherString)
-
-      case Left(error) => IO.println(s"Failed to parse JSON: $error")
-    }
-
   def weatherFunc(client: org.http4s.client.Client[IO]): IO[Unit] = {
     val citiesUri =
       "http://dataservice.accuweather.com/locations/v1/topcities/50?apikey=iUxLgSJkOao2GLy68sqFnV9G62sxMpEh"
