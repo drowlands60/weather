@@ -4,6 +4,8 @@ import cats.effect.{IO, IOApp}
 import cats.implicits._
 import io.circe.{Json, parser}
 import org.http4s.ember.client.EmberClientBuilder
+import io.circe.Decoder
+import org.http4s.circe.CirceEntityDecoder._
 
 object Weather extends IOApp.Simple {
 
@@ -16,12 +18,9 @@ object Weather extends IOApp.Simple {
       go
     }
 
-  def printCities(indexedCities: Vector[(Json, Int)]): IO[Unit] =
-    indexedCities.traverse_ { case (cityJson, i) =>
-      cityJson.hcursor.get[String]("EnglishName") match {
-        case Right(name) => IO.println(s"[$i] - $name")
-        case Left(_)     => IO.println(s"[$i] - **Name Missing**")
-      }
+  def printCities(indexedCities: List[(City, Int)]): IO[Unit] =
+    indexedCities.traverse_ { case (city, i) =>
+      IO.println(s"[$i] - ${city.EnglishName}")
     }
 
   def getInput(prompt: String): IO[String] =
@@ -30,23 +29,22 @@ object Weather extends IOApp.Simple {
       line <- IO.readLine
     } yield line
 
-  def getWeather(client: org.http4s.client.Client[IO], city: Json): IO[String] =
-    city.hcursor.get[String]("Key") match {
-      case Left(error) =>
-        IO.raiseError(new Exception(s"Failed to get location key: $error"))
-      case Right(locationKey) =>
-        val weatherURI: String =
-          s"http://dataservice.accuweather.com/currentconditions/v1/$locationKey?apikey=iUxLgSJkOao2GLy68sqFnV9G62sxMpEh"
-        client.expect[String](weatherURI)
-    }
-  def printWeather(weatherJson: String, city: Json): IO[Unit] =
+  def fetchCities(client: org.http4s.client.Client[IO], citiesUri: String): IO[List[City]] = {
+    client.expect[List[City]](citiesUri)
+  }
+
+  def getWeather(client: org.http4s.client.Client[IO], city: City): IO[List[WeatherModel]] = {
+    val weatherURI: String =
+          s"http://dataservice.accuweather.com/currentconditions/v1/${city.Key}?apikey=iUxLgSJkOao2GLy68sqFnV9G62sxMpEh"
+    client.expect[List[WeatherModel]](weatherURI)
+    
+  }
+
+  def printWeather(weatherJson: String, city: City): IO[Unit] =
     parser.parse(weatherJson) match {
       case Right(json: Json) =>
         var weatherString: String = ""
-        city.hcursor.get[String]("EnglishName") match {
-          case Right(value) => weatherString = weatherString + s"$value:\n"
-          case _            => null
-        }
+        weatherString + s"${city.EnglishName}:\n"
         val temp_val: Either[io.circe.DecodingFailure, Double] =
           json.hcursor.downArray
             .downField("Temperature")
@@ -77,49 +75,45 @@ object Weather extends IOApp.Simple {
     }
 
   def weatherFunc(client: org.http4s.client.Client[IO]): IO[Unit] = {
-    val uri =
+    val citiesUri =
       "http://dataservice.accuweather.com/locations/v1/topcities/50?apikey=iUxLgSJkOao2GLy68sqFnV9G62sxMpEh"
     for {
-      _ <- IO.println("Weather app starting...")
-      body <- client.expect[String](uri)
-      _ <- parser.parse(body) match {
-        case Right(response: Json) =>
-          val cities: Either[Throwable, Vector[Json]] =
-            response.asArray.toRight(
-              new Exception("No cities returned from AccuWeather")
-            )
-          cities match {
-            case Left(err) => IO.raiseError(err)
-            case Right(cities) =>
-              val indexedCities: Vector[(Json, Int)] = cities.zipWithIndex
-
-              for {
-                _ <- printCities(indexedCities)
-
-                input <- getInput(
-                  "Enter the number for the city you wish to receive the weather report for: "
-                )
-                cityIndexOpt = input.toIntOption
-
-                _ <- cityIndexOpt match {
-                  case Some(index) =>
-                    indexedCities.collectFirst {
-                      case (json, i) if i == index => json
-                    } match {
-                      case Some(cityJson) =>
-                        getWeather(client, cityJson).flatMap(weatherBody =>
-                          printWeather(weatherBody, cityJson)
-                        )
-                      case None => IO.println("No city found at that index.")
-                    }
-                  case None =>
-                    IO.println("Invalid number entered.")
-                }
-              } yield ()
-          }
-        case Left(error) => IO.println(s"Failed to parse JSON: $error")
+      _             <- IO.println("Weather app starting...")
+      cities        <- fetchCities(client, citiesUri)
+      indexedCities = cities.zipWithIndex
+      _             <- printCities(indexedCities)
+      input         <- getInput("Enter the number for the city you wish to receive the weather report for: ")
+      _             <- input.toIntOption match {
+                        case Some(index) if indexedCities.isDefinedAt(index) =>
+                          val (city, _) = indexedCities(index)
+                          for {
+                            weathers <- getWeather(client, city)
+                            _ <- weathers.traverse_(w =>
+                                IO.println(s"${city.EnglishName}: ${w.WeatherText}, ${w.Temperature}C, daytime=${w.IsDayTime}")
+                              )
+                          } yield ()
+                        case _ => IO.println("Invalid index")
       }
     } yield ()
   }
+}
 
+case class City(Key: String, EnglishName: String)
+object City {
+  implicit val decoder: Decoder[City] = io.circe.generic.semiauto.deriveDecoder
+}
+
+case class TemperatureMetric(Value: Double)
+object TemperatureMetric {
+  implicit val decoder: Decoder[TemperatureMetric] = io.circe.generic.semiauto.deriveDecoder
+}
+case class Temperature(Metric: TemperatureMetric)
+object Temperature {
+  implicit val decoder: Decoder[Temperature] = io.circe.generic.semiauto.deriveDecoder
+}
+
+case class WeatherModel(WeatherText: String, Temperature: Temperature, IsDayTime: Boolean)
+
+object WeatherModel {
+  implicit val decoder: Decoder[WeatherModel] = io.circe.generic.semiauto.deriveDecoder
 }
