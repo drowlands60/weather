@@ -88,9 +88,12 @@ object Weather extends IOApp.Simple {
                           val (city, _) = indexedCities(index)
                           for {
                             weathers <- getWeather(client, city)
-                            _ <- weathers.traverse_(w =>
-                                IO.println(s"${city.EnglishName}: ${w.WeatherText}, ${w.Temperature}C, daytime=${w.IsDayTime}")
-                              )
+                            _ <- weathers.traverse_{ w =>
+                                val time =
+                                  if (w.IsDayTime) "Daytime"
+                                  else "Night-time"
+                                IO.println(s"${city.EnglishName}:\n${w.WeatherText}\n${w.Temperature.Metric.Value}C\n${time}")
+                            }
                           } yield ()
                         case _ => IO.println("Invalid index")
       }
